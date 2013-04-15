@@ -70,6 +70,7 @@ struct gpio_bank {
 	bool is_mpuio;
 	bool dbck_flag;
 	bool loses_context;
+	bool context_valid;
 	int stride;
 	u32 width;
 	int context_loss_count;
@@ -1129,6 +1130,10 @@ static int omap_gpio_probe(struct platform_device *pdev)
 			bank->loses_context = true;
 	} else {
 		bank->loses_context = pdata->loses_context;
+
+		if (bank->loses_context)
+			bank->get_context_loss_count =
+				pdata->get_context_loss_count;
 	}
 
 
@@ -1178,9 +1183,6 @@ static int omap_gpio_probe(struct platform_device *pdev)
 	omap_gpio_mod_init(bank);
 	omap_gpio_chip_init(bank);
 	omap_gpio_show_rev(bank);
-
-	if (bank->loses_context)
-		bank->get_context_loss_count = pdata->get_context_loss_count;
 
 	pm_runtime_put(bank->dev);
 
@@ -1260,6 +1262,8 @@ update_gpio_context_count:
 	return 0;
 }
 
+static void omap_gpio_init_context(struct gpio_bank *p);
+
 static int omap_gpio_runtime_resume(struct device *dev)
 {
 	struct platform_device *pdev = to_platform_device(dev);
@@ -1269,6 +1273,20 @@ static int omap_gpio_runtime_resume(struct device *dev)
 	int c;
 
 	spin_lock_irqsave(&bank->lock, flags);
+
+	/*
+	 * On the first resume during the probe, the context has not
+	 * been initialised and so initialise it now. Also initialise
+	 * the context loss count.
+	 */
+	if (bank->loses_context && !bank->context_valid) {
+		omap_gpio_init_context(bank);
+
+		if (bank->get_context_loss_count)
+			bank->context_loss_count =
+				bank->get_context_loss_count(bank->dev);
+	}
+
 	_gpio_dbck_enable(bank);
 
 	/*
@@ -1385,6 +1403,29 @@ void omap2_gpio_resume_after_idle(void)
 }
 
 #if defined(CONFIG_PM_RUNTIME)
+static void omap_gpio_init_context(struct gpio_bank *p)
+{
+	struct omap_gpio_reg_offs *regs = p->regs;
+	void __iomem *base = p->base;
+
+	p->context.ctrl		= __raw_readl(base + regs->ctrl);
+	p->context.oe		= __raw_readl(base + regs->direction);
+	p->context.wake_en	= __raw_readl(base + regs->wkup_en);
+	p->context.leveldetect0	= __raw_readl(base + regs->leveldetect0);
+	p->context.leveldetect1	= __raw_readl(base + regs->leveldetect1);
+	p->context.risingdetect	= __raw_readl(base + regs->risingdetect);
+	p->context.fallingdetect = __raw_readl(base + regs->fallingdetect);
+	p->context.irqenable1	= __raw_readl(base + regs->irqenable);
+	p->context.irqenable2	= __raw_readl(base + regs->irqenable2);
+
+	if (regs->set_dataout && p->regs->clr_dataout)
+		p->context.dataout = __raw_readl(base + regs->set_dataout);
+	else
+		p->context.dataout = __raw_readl(base + regs->dataout);
+
+	p->context_valid = true;
+}
+
 static void omap_gpio_restore_context(struct gpio_bank *bank)
 {
 	__raw_writel(bank->context.wake_en,
@@ -1422,6 +1463,7 @@ static void omap_gpio_restore_context(struct gpio_bank *bank)
 #else
 #define omap_gpio_runtime_suspend NULL
 #define omap_gpio_runtime_resume NULL
+static void omap_gpio_init_context(struct gpio_bank *p) {}
 #endif
 
 static const struct dev_pm_ops gpio_pm_ops = {
