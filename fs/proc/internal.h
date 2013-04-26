@@ -211,27 +211,6 @@ extern int proc_fill_super(struct super_block *);
 extern void proc_entry_rundown(struct proc_dir_entry *);
 
 /*
- * mmu.c
- */
-struct vmalloc_info {
-	unsigned long	used;
-	unsigned long	largest_chunk;
-};
-
-#ifdef CONFIG_MMU
-#define VMALLOC_TOTAL (VMALLOC_END - VMALLOC_START)
-extern void get_vmalloc_info(struct vmalloc_info *);
-
-#else
-#define VMALLOC_TOTAL 0UL
-static inline void get_vmalloc_info(struct vmalloc_info *vmi)
-{
-	vmi->used = 0;
-	vmi->largest_chunk = 0;
-}
-#endif
-
-/*
  * proc_devtree.c
  */
 #ifdef CONFIG_PROC_DEVICETREE
