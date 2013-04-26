@@ -621,6 +621,7 @@ void audit_trim_trees(void)
 skip_it:
 		put_tree(tree);
 		mutex_lock(&audit_filter_mutex);
+		put_tree(tree);
 	}
 	list_del(&cursor);
 	mutex_unlock(&audit_filter_mutex);
