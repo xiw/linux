@@ -282,6 +282,10 @@ static unsigned long cached_align;
 
 static unsigned long vmap_area_pcpu_hole;
 
+/*** Old vmalloc interfaces ***/
+static DEFINE_RWLOCK(vmlist_lock);
+static struct vm_struct *vmlist;
+
 static struct vmap_area *__find_vmap_area(unsigned long addr)
 {
 	struct rb_node *n = vmap_area_root.rb_node;
