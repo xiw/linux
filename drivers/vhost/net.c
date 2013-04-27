@@ -70,9 +70,13 @@ enum vhost_net_poll_state {
 	VHOST_NET_POLL_STOPPED = 2,
 };
 
+struct vhost_net_virtqueue {
+	struct vhost_virtqueue vq;
+};
+
 struct vhost_net {
 	struct vhost_dev dev;
-	struct vhost_virtqueue vqs[VHOST_NET_VQ_MAX];
+	struct vhost_net_virtqueue vqs[VHOST_NET_VQ_MAX];
 	struct vhost_poll poll[VHOST_NET_VQ_MAX];
 	/* Tells us whether we are polling a socket for TX.
 	 * We only do this when socket buffer fills up.
@@ -230,7 +234,7 @@ static void vhost_zerocopy_callback(struct ubuf_info *ubuf, bool success)
  * read-size critical section for our kind of RCU. */
 static void handle_tx(struct vhost_net *net)
 {
-	struct vhost_virtqueue *vq = &net->dev.vqs[VHOST_NET_VQ_TX];
+	struct vhost_virtqueue *vq = &net->vqs[VHOST_NET_VQ_TX].vq;
 	unsigned out, in, s;
 	int head;
 	struct msghdr msg = {
@@ -470,7 +474,7 @@ err:
  * read-size critical section for our kind of RCU. */
 static void handle_rx(struct vhost_net *net)
 {
-	struct vhost_virtqueue *vq = &net->dev.vqs[VHOST_NET_VQ_RX];
+	struct vhost_virtqueue *vq = &net->vqs[VHOST_NET_VQ_RX].vq;
 	unsigned uninitialized_var(in), log;
 	struct vhost_log *vq_log;
 	struct msghdr msg = {
@@ -612,17 +616,26 @@ static int vhost_net_open(struct inode *inode, struct file *f)
 {
 	struct vhost_net *n = kmalloc(sizeof *n, GFP_KERNEL);
 	struct vhost_dev *dev;
+	struct vhost_virtqueue **vqs;
 	int r;
 
 	if (!n)
 		return -ENOMEM;
+	vqs = kmalloc(VHOST_NET_VQ_MAX * sizeof(*vqs), GFP_KERNEL);
+	if (!vqs) {
+		kfree(n);
+		return -ENOMEM;
+	}
 
 	dev = &n->dev;
-	n->vqs[VHOST_NET_VQ_TX].handle_kick = handle_tx_kick;
-	n->vqs[VHOST_NET_VQ_RX].handle_kick = handle_rx_kick;
-	r = vhost_dev_init(dev, n->vqs, VHOST_NET_VQ_MAX);
+	vqs[VHOST_NET_VQ_TX] = &n->vqs[VHOST_NET_VQ_TX].vq;
+	vqs[VHOST_NET_VQ_RX] = &n->vqs[VHOST_NET_VQ_RX].vq;
+	n->vqs[VHOST_NET_VQ_TX].vq.handle_kick = handle_tx_kick;
+	n->vqs[VHOST_NET_VQ_RX].vq.handle_kick = handle_rx_kick;
+	r = vhost_dev_init(dev, vqs, VHOST_NET_VQ_MAX);
 	if (r < 0) {
 		kfree(n);
+		kfree(vqs);
 		return r;
 	}
 
@@ -640,7 +653,7 @@ static void vhost_net_disable_vq(struct vhost_net *n,
 {
 	if (!vq->private_data)
 		return;
-	if (vq == n->vqs + VHOST_NET_VQ_TX) {
+	if (vq == &n->vqs[VHOST_NET_VQ_TX].vq) {
 		tx_poll_stop(n);
 		n->tx_poll_state = VHOST_NET_POLL_DISABLED;
 	} else
@@ -657,7 +670,7 @@ static int vhost_net_enable_vq(struct vhost_net *n,
 					 lockdep_is_held(&vq->mutex));
 	if (!sock)
 		return 0;
-	if (vq == n->vqs + VHOST_NET_VQ_TX) {
+	if (vq == &n->vqs[VHOST_NET_VQ_TX].vq) {
 		n->tx_poll_state = VHOST_NET_POLL_STOPPED;
 		ret = tx_poll_start(n, sock);
 	} else
@@ -683,30 +696,30 @@ static struct socket *vhost_net_stop_vq(struct vhost_net *n,
 static void vhost_net_stop(struct vhost_net *n, struct socket **tx_sock,
 			   struct socket **rx_sock)
 {
-	*tx_sock = vhost_net_stop_vq(n, n->vqs + VHOST_NET_VQ_TX);
-	*rx_sock = vhost_net_stop_vq(n, n->vqs + VHOST_NET_VQ_RX);
+	*tx_sock = vhost_net_stop_vq(n, &n->vqs[VHOST_NET_VQ_TX].vq);
+	*rx_sock = vhost_net_stop_vq(n, &n->vqs[VHOST_NET_VQ_RX].vq);
 }
 
 static void vhost_net_flush_vq(struct vhost_net *n, int index)
 {
 	vhost_poll_flush(n->poll + index);
-	vhost_poll_flush(&n->dev.vqs[index].poll);
+	vhost_poll_flush(&n->vqs[index].vq.poll);
 }
 
 static void vhost_net_flush(struct vhost_net *n)
 {
 	vhost_net_flush_vq(n, VHOST_NET_VQ_TX);
 	vhost_net_flush_vq(n, VHOST_NET_VQ_RX);
-	if (n->dev.vqs[VHOST_NET_VQ_TX].ubufs) {
-		mutex_lock(&n->dev.vqs[VHOST_NET_VQ_TX].mutex);
+	if (n->vqs[VHOST_NET_VQ_TX].vq.ubufs) {
+		mutex_lock(&n->vqs[VHOST_NET_VQ_TX].vq.mutex);
 		n->tx_flush = true;
-		mutex_unlock(&n->dev.vqs[VHOST_NET_VQ_TX].mutex);
+		mutex_unlock(&n->vqs[VHOST_NET_VQ_TX].vq.mutex);
 		/* Wait for all lower device DMAs done. */
-		vhost_ubuf_put_and_wait(n->dev.vqs[VHOST_NET_VQ_TX].ubufs);
-		mutex_lock(&n->dev.vqs[VHOST_NET_VQ_TX].mutex);
+		vhost_ubuf_put_and_wait(n->vqs[VHOST_NET_VQ_TX].vq.ubufs);
+		mutex_lock(&n->vqs[VHOST_NET_VQ_TX].vq.mutex);
 		n->tx_flush = false;
-		kref_init(&n->dev.vqs[VHOST_NET_VQ_TX].ubufs->kref);
-		mutex_unlock(&n->dev.vqs[VHOST_NET_VQ_TX].mutex);
+		kref_init(&n->vqs[VHOST_NET_VQ_TX].vq.ubufs->kref);
+		mutex_unlock(&n->vqs[VHOST_NET_VQ_TX].vq.mutex);
 	}
 }
 
@@ -727,6 +740,7 @@ static int vhost_net_release(struct inode *inode, struct file *f)
 	/* We do an extra flush before freeing memory,
 	 * since jobs can re-queue themselves. */
 	vhost_net_flush(n);
+	kfree(n->dev.vqs);
 	kfree(n);
 	return 0;
 }
@@ -812,7 +826,7 @@ static long vhost_net_set_backend(struct vhost_net *n, unsigned index, int fd)
 		r = -ENOBUFS;
 		goto err;
 	}
-	vq = n->vqs + index;
+	vq = &n->vqs[index].vq;
 	mutex_lock(&vq->mutex);
 
 	/* Verify that ring has been setup correctly. */
@@ -932,10 +946,10 @@ static int vhost_net_set_features(struct vhost_net *n, u64 features)
 	n->dev.acked_features = features;
 	smp_wmb();
 	for (i = 0; i < VHOST_NET_VQ_MAX; ++i) {
-		mutex_lock(&n->vqs[i].mutex);
-		n->vqs[i].vhost_hlen = vhost_hlen;
-		n->vqs[i].sock_hlen = sock_hlen;
-		mutex_unlock(&n->vqs[i].mutex);
+		mutex_lock(&n->vqs[i].vq.mutex);
+		n->vqs[i].vq.vhost_hlen = vhost_hlen;
+		n->vqs[i].vq.sock_hlen = sock_hlen;
+		mutex_unlock(&n->vqs[i].vq.mutex);
 	}
 	vhost_net_flush(n);
 	mutex_unlock(&n->dev.mutex);
