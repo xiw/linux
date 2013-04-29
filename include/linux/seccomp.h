@@ -1,12 +1,15 @@
 #ifndef _LINUX_SECCOMP_H
 #define _LINUX_SECCOMP_H
 
+#include <uapi/linux/filter.h>
 #include <uapi/linux/seccomp.h>
 
 #ifdef CONFIG_SECCOMP
 
 #include <linux/thread_info.h>
 #include <asm/seccomp.h>
+
+struct sk_buff;
 
 struct seccomp_filter;
 /**
@@ -23,6 +26,38 @@ struct seccomp_filter;
 struct seccomp {
 	int mode;
 	struct seccomp_filter *filter;
+};
+
+/**
+ * struct seccomp_filter - container for seccomp BPF programs
+ *
+ * @usage: reference count to manage the object lifetime.
+ *         get/put helpers should be used when accessing an instance
+ *         outside of a lifetime-guarded section.  In general, this
+ *         is only needed for handling filters shared across tasks.
+ * @prev: points to a previously installed, or inherited, filter
+ * @len: the number of instructions in the program
+ * @bpf_func: points to either sk_run_filter or the code generated
+ *            by the BPF JIT.
+ * @insns: the BPF program instructions to evaluate
+ *
+ * seccomp_filter objects are organized in a tree linked via the @prev
+ * pointer.  For any task, it appears to be a singly-linked list starting
+ * with current->seccomp.filter, the most recently attached or inherited filter.
+ * However, multiple filters may share a @prev node, by way of fork(), which
+ * results in a unidirectional tree existing in memory.  This is similar to
+ * how namespaces work.
+ *
+ * seccomp_filter objects should never be modified after being attached
+ * to a task_struct (other than @usage).
+ */
+struct seccomp_filter {
+	atomic_t usage;
+	struct seccomp_filter *prev;
+	unsigned short len;  /* Instruction count */
+	unsigned int (*bpf_func)(const struct sk_buff *skb,
+				 const struct sock_filter *filter);
+	struct sock_filter insns[];
 };
 
 extern int __secure_computing(int);
@@ -87,4 +122,21 @@ static inline void get_seccomp_filter(struct task_struct *tsk)
 	return;
 }
 #endif /* CONFIG_SECCOMP_FILTER */
+
+#ifdef CONFIG_SECCOMP_FILTER_JIT
+extern void seccomp_jit_compile(struct seccomp_filter *fp);
+extern void seccomp_jit_free(struct seccomp_filter *fp);
+#define SECCOMP_RUN_FILTER(FILTER) (*FILTER->bpf_func)(NULL, FILTER->insns)
+#else  /* CONFIG_SECCOMP_FILTER_JIT */
+static inline void seccomp_jit_compile(struct seccomp_filter *fp)
+{
+	return;
+}
+static inline void seccomp_jit_free(struct seccomp_filter *fp)
+{
+	return;
+}
+#define SECCOMP_RUN_FILTER(FILTER) sk_run_filter(NULL, FILTER->insns)
+#endif /* CONFIG_SECCOMP_FILTER_JIT */
+
 #endif /* _LINUX_SECCOMP_H */
