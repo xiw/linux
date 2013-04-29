@@ -110,8 +110,13 @@ struct l2cap_conninfo {
 #define L2CAP_MOVE_CHAN_RSP	0x0f
 #define L2CAP_MOVE_CHAN_CFM	0x10
 #define L2CAP_MOVE_CHAN_CFM_RSP	0x11
-#define L2CAP_CONN_PARAM_UPDATE_REQ	0x12
-#define L2CAP_CONN_PARAM_UPDATE_RSP	0x13
+
+/* L2CAP LE command codes */
+#define L2CAP_LE_COMMAND_REJ		0x01
+#define L2CAP_LE_DISCONN_REQ		0x06
+#define L2CAP_LE_DISCONN_RSP		0x07
+#define L2CAP_LE_CONN_PARAM_UPDATE_REQ	0x12
+#define L2CAP_LE_CONN_PARAM_UPDATE_RSP	0x13
 
 /* L2CAP extended feature mask */
 #define L2CAP_FEAT_FLOWCTL	0x00000001
@@ -406,14 +411,35 @@ struct l2cap_move_chan_cfm_rsp {
 #define L2CAP_IR_SUCCESS	0x0000
 #define L2CAP_IR_NOTSUPP	0x0001
 
-struct l2cap_conn_param_update_req {
+struct l2cap_le_cmd_hdr {
+	__u8       code;
+	__u8       ident;
+	__le16     len;
+} __packed;
+#define L2CAP_LE_CMD_HDR_SIZE	4
+
+struct l2cap_le_cmd_rej_unk {
+	__le16     reason;
+} __packed;
+
+struct l2cap_le_disconn_req {
+	__le16     dcid;
+	__le16     scid;
+} __packed;
+
+struct l2cap_le_disconn_rsp {
+	__le16     dcid;
+	__le16     scid;
+} __packed;
+
+struct l2cap_le_conn_param_update_req {
 	__le16      min;
 	__le16      max;
 	__le16      latency;
 	__le16      to_multiplier;
 } __packed;
 
-struct l2cap_conn_param_update_rsp {
+struct l2cap_le_conn_param_update_rsp {
 	__le16      result;
 } __packed;
 

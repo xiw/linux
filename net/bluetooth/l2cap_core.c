@@ -5113,13 +5113,13 @@ static inline int l2cap_check_conn_param(u16 min, u16 max, u16 latency,
 	return 0;
 }
 
-static inline int l2cap_conn_param_update_req(struct l2cap_conn *conn,
-					      struct l2cap_cmd_hdr *cmd,
-					      u8 *data)
+static inline int l2cap_le_conn_param_update_req(struct l2cap_conn *conn,
+						 struct l2cap_cmd_hdr *cmd,
+						 u8 *data)
 {
 	struct hci_conn *hcon = conn->hcon;
-	struct l2cap_conn_param_update_req *req;
-	struct l2cap_conn_param_update_rsp rsp;
+	struct l2cap_le_conn_param_update_req *req;
+	struct l2cap_le_conn_param_update_rsp rsp;
 	u16 min, max, latency, to_multiplier, cmd_len;
 	int err;
 
@@ -5127,10 +5127,10 @@ static inline int l2cap_conn_param_update_req(struct l2cap_conn *conn,
 		return -EINVAL;
 
 	cmd_len = __le16_to_cpu(cmd->len);
-	if (cmd_len != sizeof(struct l2cap_conn_param_update_req))
+	if (cmd_len != sizeof(struct l2cap_le_conn_param_update_req))
 		return -EPROTO;
 
-	req = (struct l2cap_conn_param_update_req *) data;
+	req = (struct l2cap_le_conn_param_update_req *) data;
 	min		= __le16_to_cpu(req->min);
 	max		= __le16_to_cpu(req->max);
 	latency		= __le16_to_cpu(req->latency);
@@ -5147,7 +5147,7 @@ static inline int l2cap_conn_param_update_req(struct l2cap_conn *conn,
 	else
 		rsp.result = __constant_cpu_to_le16(L2CAP_CONN_PARAM_ACCEPTED);
 
-	l2cap_send_cmd(conn, cmd->ident, L2CAP_CONN_PARAM_UPDATE_RSP,
+	l2cap_send_cmd(conn, cmd->ident, L2CAP_LE_CONN_PARAM_UPDATE_RSP,
 		       sizeof(rsp), &rsp);
 
 	if (!err)
@@ -5240,13 +5240,13 @@ static inline int l2cap_le_sig_cmd(struct l2cap_conn *conn,
 				   struct l2cap_cmd_hdr *cmd, u8 *data)
 {
 	switch (cmd->code) {
-	case L2CAP_COMMAND_REJ:
+	case L2CAP_LE_COMMAND_REJ:
 		return 0;
 
-	case L2CAP_CONN_PARAM_UPDATE_REQ:
-		return l2cap_conn_param_update_req(conn, cmd, data);
+	case L2CAP_LE_CONN_PARAM_UPDATE_REQ:
+		return l2cap_le_conn_param_update_req(conn, cmd, data);
 
-	case L2CAP_CONN_PARAM_UPDATE_RSP:
+	case L2CAP_LE_CONN_PARAM_UPDATE_RSP:
 		return 0;
 
 	default:
