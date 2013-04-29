@@ -14,7 +14,6 @@
  */
 
 #include <linux/init.h>
-#include <linux/irqchip/arm-gic.h>
 #include <linux/smp.h>
 #include <linux/of.h>
 
@@ -55,11 +54,6 @@ static int __cpuinit psci_boot_secondary(unsigned int cpu,
 	return -ENODEV;
 }
 
-static void __cpuinit psci_secondary_init(unsigned int cpu)
-{
-	gic_secondary_init(0);
-}
-
 #ifdef CONFIG_HOTPLUG_CPU
 void __ref psci_cpu_die(unsigned int cpu)
 {
@@ -84,7 +78,6 @@ bool __init psci_smp_available(void)
 }
 
 struct smp_operations __initdata psci_smp_ops = {
-	.smp_secondary_init	= psci_secondary_init,
 	.smp_boot_secondary	= psci_boot_secondary,
 	.cpu_die		= psci_cpu_die,
 };
