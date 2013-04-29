@@ -36,7 +36,9 @@ next/fixes-non-critical
 		"ARM: tegra: solve adr range issue with THUMB2_KERNEL enabled"
 		"ARM: OMAP2+: add dependencies on ARCH_MULTI_V6/V7"
 		"ARM: u300: fix ages old copy/paste bug"
-
+		"ARM: tegra: call cpu_do_idle from C code"
+		"ARM: orion5x: include linux/cpu.h"
+		"Turn off -Wmaybe-uninitialized when building with -Os"
 
 next/cleanup
 	samsung/cleanup-s3c
