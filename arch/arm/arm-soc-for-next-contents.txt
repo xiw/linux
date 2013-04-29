@@ -369,6 +369,9 @@ late/cleanup
 	spear/dwdma
 		  patches <1359395857-1235-1-git-send-email-arnd@arndb.de>
 		  depends on spear/multiplatform
+	at91/soc4
+		  git://github.com/at91linux/linux-at91.git tags/at91-soc
+		  depends on at91/soc3
 
 late/fixes
 	patch	<201304210002.00125.arnd@arndb.de>
