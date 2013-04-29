@@ -893,6 +893,7 @@ long f2fs_compat_ioctl(struct file *, unsigned int, unsigned long);
  * inode.c
  */
 void f2fs_set_inode_flags(struct inode *);
+struct inode *f2fs_iget_nowait(struct super_block *, unsigned long);
 struct inode *f2fs_iget(struct super_block *, unsigned long);
 void update_inode(struct inode *, struct page *);
 int update_inode_page(struct inode *);
