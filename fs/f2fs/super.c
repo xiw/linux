@@ -98,6 +98,24 @@ static struct inode *f2fs_alloc_inode(struct super_block *sb)
 	return &fi->vfs_inode;
 }
 
+static int f2fs_drop_inode(struct inode *inode)
+{
+	int drop = generic_drop_inode(inode);
+
+	/*
+	 * This is to avoid a deadlock condition like below.
+	 * writeback_single_inode(inode)
+	 *  - f2fs_write_data_page
+	 *    - f2fs_gc -> iput -> evict
+	 *       - inode_wait_for_writeback(inode)
+	 */
+	if (inode->i_state & I_SYNC &&
+			is_inode_flag_set(F2FS_I(inode), FI_ON_GC))
+		drop = 0;
+	clear_inode_flag(F2FS_I(inode), FI_ON_GC);
+	return drop;
+}
+
 static void f2fs_i_callback(struct rcu_head *head)
 {
 	struct inode *inode = container_of(head, struct inode, i_rcu);
@@ -232,6 +250,7 @@ static int f2fs_show_options(struct seq_file *seq, struct dentry *root)
 
 static struct super_operations f2fs_sops = {
 	.alloc_inode	= f2fs_alloc_inode,
+	.drop_inode	= f2fs_drop_inode,
 	.destroy_inode	= f2fs_destroy_inode,
 	.write_inode	= f2fs_write_inode,
 	.show_options	= f2fs_show_options,

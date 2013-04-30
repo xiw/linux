@@ -846,6 +846,7 @@ enum {
 	FI_INC_LINK,		/* need to increment i_nlink */
 	FI_ACL_MODE,		/* indicate acl mode */
 	FI_NO_ALLOC,		/* should not allocate any blocks */
+	FI_ON_GC,		/* indicate inode is on gc */
 };
 
 static inline void set_inode_flag(struct f2fs_inode_info *fi, int flag)

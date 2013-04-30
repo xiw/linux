@@ -345,6 +345,7 @@ repeat:
 	}
 	new_ie->inode = inode;
 	list_add_tail(&new_ie->list, ilist);
+	set_inode_flag(F2FS_I(inode), FI_ON_GC);
 }
 
 static void put_gc_inode(struct list_head *ilist)
