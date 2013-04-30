@@ -81,6 +81,7 @@
 #include <linux/pstore.h>
 #include <linux/ctype.h>
 #include <linux/ucs2_string.h>
+#include <linux/magic.h>
 
 #include <linux/fs.h>
 #include <linux/ramfs.h>
