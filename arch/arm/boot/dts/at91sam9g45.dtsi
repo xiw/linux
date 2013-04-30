@@ -108,6 +108,7 @@
 				compatible = "atmel,at91sam9g45-dma";
 				reg = <0xffffec00 0x200>;
 				interrupts = <21 4 0>;
+				#dma-cells = <2>;
 			};
 
 			pinctrl@fffff200 {
@@ -502,6 +503,9 @@
 				atmel,adc-drdy-mask = <0x10000>;
 				atmel,adc-status-register = <0x1c>;
 				atmel,adc-trigger-register = <0x08>;
+				atmel,adc-res = <8 10>;
+				atmel,adc-res-names = "lowres", "highres";
+				atmel,adc-use-res = "highres";
 
 				trigger@0 {
 					trigger-name = "external-rising";
@@ -530,6 +534,8 @@
 				compatible = "atmel,hsmci";
 				reg = <0xfff80000 0x600>;
 				interrupts = <11 4 0>;
+				dmas = <&dma 1 0>;
+				dma-names = "rxtx";
 				#address-cells = <1>;
 				#size-cells = <0>;
 				status = "disabled";
@@ -539,6 +545,8 @@
 				compatible = "atmel,hsmci";
 				reg = <0xfffd0000 0x600>;
 				interrupts = <29 4 0>;
+				dmas = <&dma 1 13>;
+				dma-names = "rxtx";
 				#address-cells = <1>;
 				#size-cells = <0>;
 				status = "disabled";
