@@ -68,6 +68,8 @@
 #define DESCRIPTOR_BRANCH_ALWAYS	(3 << 2)
 #define DESCRIPTOR_WAIT			(3 << 0)
 
+#define DESCRIPTOR_CMD			(0xf << 12)
+
 struct descriptor {
 	__le16 req_count;
 	__le16 control;
@@ -149,10 +151,11 @@ struct context {
 	struct descriptor *last;
 
 	/*
-	 * The last descriptor in the DMA program.  It contains the branch
+	 * The last descriptor block in the DMA program. It contains the branch
 	 * address that must be updated upon appending a new descriptor.
 	 */
 	struct descriptor *prev;
+	int prev_z;
 
 	descriptor_callback_t callback;
 
@@ -270,7 +273,9 @@ static char ohci_driver_name[] = KBUILD_MODNAME;
 #define PCI_DEVICE_ID_TI_TSB12LV22	0x8009
 #define PCI_DEVICE_ID_TI_TSB12LV26	0x8020
 #define PCI_DEVICE_ID_TI_TSB82AA2	0x8025
+#define PCI_DEVICE_ID_VIA_VT630X	0x3044
 #define PCI_VENDOR_ID_PINNACLE_SYSTEMS	0x11bd
+#define PCI_REV_ID_VIA_VT6306		0x46
 
 #define QUIRK_CYCLE_TIMER		1
 #define QUIRK_RESET_PACKET		2
@@ -278,6 +283,7 @@ static char ohci_driver_name[] = KBUILD_MODNAME;
 #define QUIRK_NO_1394A			8
 #define QUIRK_NO_MSI			16
 #define QUIRK_TI_SLLZ059		32
+#define QUIRK_IR_WAKE			64
 
 /* In case of multiple matches in ohci_quirks[], only the first one is used. */
 static const struct {
@@ -319,6 +325,9 @@ static const struct {
 	{PCI_VENDOR_ID_TI, PCI_ANY_ID, PCI_ANY_ID,
 		QUIRK_RESET_PACKET},
 
+	{PCI_VENDOR_ID_VIA, PCI_DEVICE_ID_VIA_VT630X, PCI_REV_ID_VIA_VT6306,
+		QUIRK_CYCLE_TIMER | QUIRK_IR_WAKE},
+
 	{PCI_VENDOR_ID_VIA, PCI_ANY_ID, PCI_ANY_ID,
 		QUIRK_CYCLE_TIMER | QUIRK_NO_MSI},
 };
@@ -333,6 +342,7 @@ MODULE_PARM_DESC(quirks, "Chip quirks (default = 0"
 	", no 1394a enhancements = "	__stringify(QUIRK_NO_1394A)
 	", disable MSI = "		__stringify(QUIRK_NO_MSI)
 	", TI SLLZ059 erratum = "	__stringify(QUIRK_TI_SLLZ059)
+	", IR wake unreliable = "	__stringify(QUIRK_IR_WAKE)
 	")");
 
 #define OHCI_PARAM_DEBUG_AT_AR		1
@@ -1157,6 +1167,7 @@ static int context_init(struct context *ctx, struct fw_ohci *ohci,
 	ctx->buffer_tail->used += sizeof(*ctx->buffer_tail->buffer);
 	ctx->last = ctx->buffer_tail->buffer;
 	ctx->prev = ctx->buffer_tail->buffer;
+	ctx->prev_z = 1;
 
 	return 0;
 }
@@ -1221,14 +1232,35 @@ static void context_append(struct context *ctx,
 {
 	dma_addr_t d_bus;
 	struct descriptor_buffer *desc = ctx->buffer_tail;
+	struct descriptor *d_branch;
 
 	d_bus = desc->buffer_bus + (d - desc->buffer) * sizeof(*d);
 
 	desc->used += (z + extra) * sizeof(*d);
 
 	wmb(); /* finish init of new descriptors before branch_address update */
-	ctx->prev->branch_address = cpu_to_le32(d_bus | z);
-	ctx->prev = find_branch_descriptor(d, z);
+
+	d_branch = find_branch_descriptor(ctx->prev, ctx->prev_z);
+	d_branch->branch_address = cpu_to_le32(d_bus | z);
+
+	/*
+	 * VT6306 incorrectly checks only the single descriptor at the
+	 * CommandPtr when the wake bit is written, so if it's a
+	 * multi-descriptor block starting with an INPUT_MORE, put a copy of
+	 * the branch address in the first descriptor.
+	 *
+	 * Not doing this for transmit contexts since not sure how it interacts
+	 * with skip addresses.
+	 */
+	if (unlikely(ctx->ohci->quirks & QUIRK_IR_WAKE) &&
+	    d_branch != ctx->prev &&
+	    (ctx->prev->control & cpu_to_le16(DESCRIPTOR_CMD)) ==
+	     cpu_to_le16(DESCRIPTOR_INPUT_MORE)) {
+		ctx->prev->branch_address = cpu_to_le32(d_bus | z);
+	}
+
+	ctx->prev = d;
+	ctx->prev_z = z;
 }
 
 static void context_stop(struct context *ctx)
@@ -2246,7 +2278,6 @@ static int ohci_enable(struct fw_card *card,
 		       const __be32 *config_rom, size_t length)
 {
 	struct fw_ohci *ohci = fw_ohci(card);
-	struct pci_dev *dev = to_pci_dev(card->device);
 	u32 lps, version, irqs;
 	int i, ret;
 
@@ -2381,24 +2412,6 @@ static int ohci_enable(struct fw_card *card,
 	reg_write(ohci, OHCI1394_ConfigROMmap, ohci->next_config_rom_bus);
 
 	reg_write(ohci, OHCI1394_AsReqFilterHiSet, 0x80000000);
-
-	if (!(ohci->quirks & QUIRK_NO_MSI))
-		pci_enable_msi(dev);
-	if (request_irq(dev->irq, irq_handler,
-			pci_dev_msi_enabled(dev) ? 0 : IRQF_SHARED,
-			ohci_driver_name, ohci)) {
-		dev_err(card->device, "failed to allocate interrupt %d\n",
-			dev->irq);
-		pci_disable_msi(dev);
-
-		if (config_rom) {
-			dma_free_coherent(ohci->card.device, CONFIG_ROM_SIZE,
-					  ohci->next_config_rom,
-					  ohci->next_config_rom_bus);
-			ohci->next_config_rom = NULL;
-		}
-		return -EIO;
-	}
 
 	irqs =	OHCI1394_reqTxComplete | OHCI1394_respTxComplete |
 		OHCI1394_RQPkt | OHCI1394_RSPkt |
@@ -3675,9 +3688,20 @@ static int pci_probe(struct pci_dev *dev,
 	guid = ((u64) reg_read(ohci, OHCI1394_GUIDHi) << 32) |
 		reg_read(ohci, OHCI1394_GUIDLo);
 
+	if (!(ohci->quirks & QUIRK_NO_MSI))
+		pci_enable_msi(dev);
+	if (request_irq(dev->irq, irq_handler,
+			pci_dev_msi_enabled(dev) ? 0 : IRQF_SHARED,
+			ohci_driver_name, ohci)) {
+		dev_err(&dev->dev, "failed to allocate interrupt %d\n",
+			dev->irq);
+		err = -EIO;
+		goto fail_msi;
+	}
+
 	err = fw_card_add(&ohci->card, max_receive, link_speed, guid);
 	if (err)
-		goto fail_contexts;
+		goto fail_irq;
 
 	version = reg_read(ohci, OHCI1394_Version) & 0x00ff00ff;
 	dev_notice(&dev->dev,
@@ -3688,6 +3712,10 @@ static int pci_probe(struct pci_dev *dev,
 
 	return 0;
 
+ fail_irq:
+	free_irq(dev->irq, ohci);
+ fail_msi:
+	pci_disable_msi(dev);
  fail_contexts:
 	kfree(ohci->ir_context_list);
 	kfree(ohci->it_context_list);
@@ -3711,19 +3739,21 @@ static int pci_probe(struct pci_dev *dev,
 	kfree(ohci);
 	pmac_ohci_off(dev);
  fail:
-	if (err == -ENOMEM)
-		dev_err(&dev->dev, "out of memory\n");
-
 	return err;
 }
 
 static void pci_remove(struct pci_dev *dev)
 {
-	struct fw_ohci *ohci;
+	struct fw_ohci *ohci = pci_get_drvdata(dev);
 
-	ohci = pci_get_drvdata(dev);
-	reg_write(ohci, OHCI1394_IntMaskClear, ~0);
-	flush_writes(ohci);
+	/*
+	 * If the removal is happening from the suspend state, LPS won't be
+	 * enabled and host registers (eg., IntMaskClear) won't be accessible.
+	 */
+	if (reg_read(ohci, OHCI1394_HCControlSet) & OHCI1394_HCControl_LPS) {
+		reg_write(ohci, OHCI1394_IntMaskClear, ~0);
+		flush_writes(ohci);
+	}
 	cancel_work_sync(&ohci->bus_reset_work);
 	fw_core_remove_card(&ohci->card);
 
@@ -3766,8 +3796,6 @@ static int pci_suspend(struct pci_dev *dev, pm_message_t state)
 	int err;
 
 	software_reset(ohci);
-	free_irq(dev->irq, ohci);
-	pci_disable_msi(dev);
 	err = pci_save_state(dev);
 	if (err) {
 		dev_err(&dev->dev, "pci_save_state failed\n");
@@ -3837,6 +3865,4 @@ MODULE_DESCRIPTION("Driver for PCI OHCI IEEE1394 controllers");
 MODULE_LICENSE("GPL");
 
 /* Provide a module alias so root-on-sbp2 initrds don't break. */
-#ifndef CONFIG_IEEE1394_OHCI1394_MODULE
 MODULE_ALIAS("ohci1394");
-#endif
