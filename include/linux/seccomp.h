@@ -50,6 +50,7 @@ static inline int seccomp_mode(struct seccomp *s)
 #ifdef CONFIG_SECCOMP_FILTER_JIT
 extern void seccomp_jit_compile(struct seccomp_filter *fp);
 extern void seccomp_jit_free(struct seccomp_filter *fp);
+#define SECCOMP_RUN_FILTER(FILTER) (*FILTER->bpf_func)(NULL, FILTER->insns)
 
 /*
  * accessors used by seccomp JIT code to avoid having to declare the
@@ -60,10 +61,11 @@ struct sock_filter *seccomp_filter_get_insns(struct seccomp_filter *fp);
 void seccomp_filter_set_bpf_func(struct seccomp_filter *fp, void *func);
 void *seccomp_filter_get_bpf_func(struct seccomp_filter *fp);
 
-#else
+#else  /* CONFIG_SECCOMP_FILTER_JIT */
 static inline void seccomp_jit_compile(struct seccomp_filter *fp) { }
 static inline void seccomp_jit_free(struct seccomp_filter *fp) { }
-#endif
+#define SECCOMP_RUN_FILTER(FILTER) sk_run_filter(NULL, FILTER->insns)
+#endif /* CONFIG_SECCOMP_FILTER_JIT */
 
 #else /* CONFIG_SECCOMP */
 
