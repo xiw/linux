@@ -2,6 +2,7 @@
 #include <linux/module.h>
 #include <linux/pstore.h>
 #include <linux/ucs2_string.h>
+#include <linux/slab.h>
 
 #define DUMP_NAME_LEN 52
 
