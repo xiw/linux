@@ -23,6 +23,7 @@
 #include <linux/pfn.h>
 #include <linux/debugfs.h>
 #include <linux/kexec.h>
+#include <linux/sizes.h>
 
 #include <asm/addrspace.h>
 #include <asm/bootinfo.h>
@@ -120,6 +121,25 @@ void __init add_memory_region(phys_t start, phys_t size, long type)
 	boot_mem_map.map[x].size = size;
 	boot_mem_map.map[x].type = type;
 	boot_mem_map.nr_map++;
+}
+
+void __init detect_memory_region(phys_t start, phys_t sz_min, phys_t sz_max)
+{
+	phys_t size;
+
+	for (size = sz_min; size < sz_max; size <<= 1) {
+		if (!memcmp(detect_memory_region,
+				detect_memory_region + size, 1024))
+			break;
+	}
+
+	pr_debug("Memory: %lluMB of RAM detected at 0x%llx (min: %lluMB, max: %lluMB)\n",
+		((unsigned long long) size) / SZ_1M,
+		(unsigned long long) start,
+		((unsigned long long) sz_min) / SZ_1M,
+		((unsigned long long) sz_max) / SZ_1M);
+
+	add_memory_region(start, size, BOOT_MEM_RAM);
 }
 
 static void __init print_memory_map(void)
