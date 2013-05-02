@@ -14,7 +14,7 @@
 
 #include <asm/smp_plat.h>
 
-#include <mach/setup.h>
+#include "setup.h"
 
 /*
  * platform-specific code to shutdown a CPU
