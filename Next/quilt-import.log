@@ -1,0 +1,25 @@
+Importing jdelvare-hwmon based on 10b38669d64c757cfd927e3820292c580ed70aae
+Unchanged quilt series jdelvare-hwmon
+Importing device-mapper based on v3.9
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard c1be5a5b1b355d40e6cf79cc979eb66dafa24ad1
+HEAD is now at c1be5a5 Linux 3.9
+$ git am ../quilt/device-mapper/dm-cache-fix-error-return-code-in-cache_create.patch
+Applying: Return -ENOMEM if memory allocation fails in cache_create
+$ git am ../quilt/device-mapper/dm-snapshot-fix-error-return-code-in-snapshot_ctr.patch
+Applying: Return -ENOMEM instead of success if unable to allocate pending
+$ git am ../quilt/device-mapper/dm-cache-policy-fix-description-of-lookup-fn.patch
+Applying: Correct the documented requirement on the return code from dm cache policy
+$ git am ../quilt/device-mapper/dm-bufio-avoid-a-possible-__vmalloc-deadlock.patch
+Applying: This patch uses memalloc_noio_save to avoid a possible deadlock in
+$ git am ../quilt/device-mapper/dm-table-fix-write-same-support.patch
+Applying: If device_not_write_same_capable() returns true then the iterate_devices
+$ git am ../quilt/device-mapper/dm-document-iterate_devices.patch
+Applying: Document iterate_devices in device-mapper.h.
+$ git am ../quilt/device-mapper/dm-persistent-data-fix-error-message-typos.patch
+Applying: Fix some typos in dm-space-map-metadata.c error messages.
+$ cd /home/sfr/kernels/next/next
+$ git fetch -f ../quilt-tmp master:device-mapper/master
+From ../quilt-tmp
+ + f8efabf...adf9566 master     -> device-mapper/master  (forced update)
