@@ -15,8 +15,6 @@
  */
 #include <linux/kernel.h>
 
-#include <asm/cacheflush.h>
-
 #include "core.h"
 #include "sysregs.h"
 
